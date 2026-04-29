@@ -133,20 +133,28 @@ jobs:
 
       - name: Configure and Build
         run: |
+          # libusb'nin kurulu olduğu yeri tam olarak bulalım
+          LIBUSB_PATH=$(brew --prefix libusb)
+          
           mkdir build
           cd build
-          export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/opt/homebrew/lib/pkgconfig"
-          cmake ../src -DCMAKE_PREFIX_PATH=$Qt6_DIR -DCMAKE_BUILD_TYPE=Release
+          
+          # CMAKE_PREFIX_PATH içine hem Qt'yi hem de libusb yolunu ekliyoruz
+          # Böylece linker kütüphaneyi bulabiliyor
+          cmake ../src \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
+            -DCMAKE_BUILD_TYPE=Release
+          
           make -j$(sysctl -n hw.ncpu)
 
       - name: Deploy and Package macOS
         run: |
-          # macdeployqt aracı tüm Qt kütüphanelerini .app içine gömer
-          # -dmg parametresi ise bunu bir yükleme dosyasına dönüştürür
-          $Qt6_DIR/bin/macdeployqt build/GemstoneImager.app -dmg
+          # Loglarına göre uygulamanın adı gem-imager.app
+          # macdeployqt ile kütüphaneleri içine gömüyoruz
+          $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
           
-          # Dosya adını versiyon bilgisiyle düzenlemek istersen (isteğe bağlı)
-          mv build/GemstoneImager.dmg build/GemImager-macOS.dmg
+          # Dosyayı indirirken güzel görünmesi için isimlendiriyoruz
+          mv build/gem-imager.dmg build/GemImager-macOS.dmg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
