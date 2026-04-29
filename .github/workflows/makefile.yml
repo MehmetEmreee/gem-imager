@@ -104,7 +104,7 @@ jobs:
         with:
           name: GemImager Windows ${{ steps.getversion.outputs.gemImagerVersion }}
           path: ${{ github.workspace }}\build\GemImager-${{ steps.getversion.outputs.gemImagerVersion }}.exe
-macos:
+  macos:
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -144,3 +144,4 @@ macos:
         with:
           name: GemImager-macOS
           path: build/GemImager-macOS.zip
+  
