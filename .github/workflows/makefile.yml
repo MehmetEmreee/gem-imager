@@ -114,53 +114,47 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          brew install libusb pkg-config
+    - name: Install Dependencies
+      run: |
+        brew install libusb pkg-config
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          aqtversion: '==3.1.*'
-          version: '6.7.3'
-          host: 'mac'
-          target: 'desktop'
-          arch: 'clang_64'
-          modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        aqtversion: '==3.1.*'
+        version: '6.7.3'
+        host: 'mac'
+        target: 'desktop'
+        arch: 'clang_64'
+        modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
 
-      - name: Configure and Build
-        run: |
-          # libusb yolunu net bir şekilde alıyoruz
-          LIBUSB_PATH=$(brew --prefix libusb)
-          
-          # Bağlayıcının (Linker) libusb'yi bulması için çevresel yolları zorluyoruz
-          export LDFLAGS="-L$LIBUSB_PATH/lib"
-          export CPPFLAGS="-I$LIBUSB_PATH/include"
-          export PKG_CONFIG_PATH="$LIBUSB_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
-          
-          mkdir build
-          cd build
-          
-          # CMAKE_LIBRARY_PATH ve CMAKE_INCLUDE_PATH ile linker'a kütüphaneyi dikte ediyoruz
-          cmake ../src \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
-            -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
-            -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include" \
-            -DCMAKE_BUILD_TYPE=Release
-          
-          make -j$(sysctl -n hw.ncpu)
+    - name: Configure and Build
+      run: |
+        LIBUSB_PATH=$(brew --prefix libusb)
+        
+        mkdir build
+        cd build
+        
+        cmake ../src \
+          -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
+          -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
+          -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include/libusb-1.0" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_EXE_LINKER_FLAGS="-L$LIBUSB_PATH/lib" \
+          -DCMAKE_SHARED_LINKER_FLAGS="-L$LIBUSB_PATH/lib"
+        
+        make -j$(sysctl -n hw.ncpu)
 
-      - name: Deploy and Package macOS
-        run: |
-          # Loglara göre uygulama adı gem-imager.app
-          $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
-          mv build/gem-imager.dmg build/GemImager-macOS.dmg
+    - name: Deploy and Package macOS
+      run: |
+        $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
+        mv build/gem-imager.dmg build/GemImager-macOS.dmg
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GemImager-macOS
-          path: build/GemImager-macOS.dmg
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GemImager-macOS
+        path: build/GemImager-macOS.dmg
