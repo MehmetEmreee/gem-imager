@@ -121,9 +121,15 @@ jobs:
         run: brew install autoconf automake libtool pkg-config
  
       # ---------------------------------------------------------------------------
-      # Homebrew'ün kurduğu libusb sadece runner'ın native arch'ı için derlenir
-      # (macos-latest = arm64). Universal binary (arm64 + x86_64) üretebilmek için
-      # libusb'i kaynak koddan her iki mimari için ayrı derleyip lipo ile birleştiriyoruz.
+      # macos-latest = arm64 runner. Homebrew arm64-only kütüphaneler kurar.
+      # Universal binary (arm64 + x86_64) için iki sorunlu bağımlılık var:
+      #   1) libusb     → kaynak koddan universal static build yapıyoruz
+      #   2) libnghttp2 → bundled curl'de HTTP/2'yi devre dışı bırakıyoruz
+      #      (OS imager için HTTP/2 kritik değil; HTTPS SecureTransport ile çalışır)
+      #
+      # PKG_CONFIG_PATH'i SADECE bizim custom path'e set ediyoruz.
+      # Homebrew path'ini append etmiyoruz — yoksa cmake yine
+      # arm64-only system kütüphaneleri bulur ve x86_64 link hatası alırız.
       # ---------------------------------------------------------------------------
       - name: Build universal libusb (static)
         run: |
@@ -154,7 +160,7 @@ jobs:
           # Doğrulama: "Architectures in the fat file: libusb-1.0.a are: x86_64 arm64"
           lipo -info /tmp/libusb-universal/lib/libusb-1.0.a
  
-          # pkg-config dosyası: statik link için framework'ler de dahil
+          # pkg-config dosyası: statik link için macOS framework'leri de dahil
           # (IOKit + CoreFoundation + AppKit libusb'in macOS backend'i için gerekli)
           {
             echo "prefix=/tmp/libusb-universal"
@@ -175,22 +181,26 @@ jobs:
           version: '6.7.3'
           host: 'mac'
           target: 'desktop'
-          arch: 'clang_64'  # Qt 6.2+ için clang_64 universal binary (arm64+x86_64) içerir
+          arch: 'clang_64'  # Qt 6.2+ macOS: clang_64 universal binary (arm64+x86_64) içerir
           modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
  
       - name: Configure and Build (Universal Binary)
         run: |
-          # CMakeLists.txt zaten CMAKE_OSX_ARCHITECTURES="arm64;x86_64" ve
-          # CMAKE_OSX_DEPLOYMENT_TARGET="11" içeriyor, tekrar geçmemize gerek yok.
-          # Sadece PKG_CONFIG_PATH'i ayarlıyoruz ki dfu-util/CMakeLists.txt içindeki
-          # pkg_check_modules(LIBUSB ...) bizim universal static libusb'i bulsun.
-          export PKG_CONFIG_PATH=/tmp/libusb-universal/lib/pkgconfig:$PKG_CONFIG_PATH
+          # PKG_CONFIG_PATH'i SADECE bizim universal libusb path'ine set ediyoruz.
+          # Homebrew path'leri ($PKG_CONFIG_PATH) eklenmez — arm64-only libs bulunmasın.
+          export PKG_CONFIG_PATH=/tmp/libusb-universal/lib/pkgconfig
  
           mkdir build && cd build
  
+          # -DUSE_NGHTTP2=OFF: bundled curl'de HTTP/2 devre dışı.
+          # Homebrew libnghttp2 arm64-only olduğu için x86_64 linker hatası verir.
+          # HTTPS bağlantıları SecureTransport (macOS native) ile sorunsuz çalışmaya devam eder.
+          # CMakeLists.txt zaten CMAKE_OSX_ARCHITECTURES="arm64;x86_64" ve
+          # CMAKE_OSX_DEPLOYMENT_TARGET="11" içeriyor, ayrıca geçmemize gerek yok.
           cmake ../src \
             -DCMAKE_PREFIX_PATH="$Qt6_DIR" \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_NGHTTP2=OFF
  
           make -j$(sysctl -n hw.ncpu)
  
@@ -207,4 +217,6 @@ jobs:
         with:
           name: GemImager-macOS-universal
           path: build/GemImager-macOS-universal.dmg
+ 
+
 
