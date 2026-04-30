@@ -112,112 +112,53 @@ jobs:
           name: GemImager Windows ${{ steps.getversion.outputs.gemImagerVersion }}
           path: ${{ github.workspace }}\build\GemImager-${{ steps.getversion.outputs.gemImagerVersion }}.exe
   macos:
-    runs-on: macos-latest  # Apple Silicon (arm64) runner
+    runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
- 
-      # ---------------------------------------------------------------------------
-      # SORUN: macos-latest = arm64 runner. Homebrew arm64-only kütüphane kurar.
-      # cmake hem pkg-config hem de kendi find_library() mekanizmasıyla
-      # /opt/homebrew'e bakar — bu referanslar artık kaldırıldı.
-      #
-      # ÇÖZÜM:
-      #   1) Homebrew'ün arm64-only libusb ve libnghttp2'sini tamamen kaldır.
-      #   2) Universal static libusb'i derle, /usr/local'e kur (cmake doğal bulur).
-      #   3) libnghttp2 bulunamayacağı için -DUSE_NGHTTP2=OFF otomatik devreye girer.
-      #      (OS imager için HTTP/2 kritik değil; HTTPS SecureTransport ile çalışır.)
-      # ---------------------------------------------------------------------------
- 
-      - name: Remove conflicting Homebrew arm64-only libraries
-        run: |
-          brew uninstall --ignore-dependencies libusb libnghttp2 2>/dev/null || true
- 
-      - name: Build and install universal libusb (static)
-        run: |
-          # Release tarball kullanıyoruz — configure scripti hazır gelir, autotools gerekmez.
-          curl -fsSL \
-            https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27.tar.bz2 \
-            -o /tmp/libusb.tar.bz2
-          tar xjf /tmp/libusb.tar.bz2 -C /tmp
-          cd /tmp/libusb-1.0.27
- 
-          for ARCH in x86_64 arm64; do
-            make clean 2>/dev/null || true
-            CFLAGS="-arch ${ARCH}" LDFLAGS="-arch ${ARCH}" \
-            ./configure \
-              --prefix=/tmp/libusb-${ARCH} \
-              --enable-static \
-              --disable-shared
-            make -j$(sysctl -n hw.ncpu)
-            make install
-          done
- 
-          lipo -create \
-            /tmp/libusb-x86_64/lib/libusb-1.0.a \
-            /tmp/libusb-arm64/lib/libusb-1.0.a \
-            -output /tmp/libusb-universal.a
- 
-          # Doğrulama: "Architectures in the fat file: ... are: x86_64 arm64"
-          lipo -info /tmp/libusb-universal.a
- 
-          # /usr/local/lib'e kur — macOS varsayılan linker arama yolunda.
-          # pkg_check_modules'dan gelen -lusb-1.0 için ayrıca -L flag'i gerekmez.
-          sudo mkdir -p /usr/local/lib/pkgconfig /usr/local/include
-          sudo cp /tmp/libusb-universal.a /usr/local/lib/libusb-1.0.a
-          sudo cp -r /tmp/libusb-arm64/include/libusb-1.0 /usr/local/include/
- 
-          # pkg-config dosyası: macOS framework'leri statik link için gerekli
-          {
-            echo "prefix=/usr/local"
-            echo "libdir=\${prefix}/lib"
-            echo "includedir=\${prefix}/include/libusb-1.0"
-            echo ""
-            echo "Name: libusb-1.0"
-            echo "Description: C API for USB device access"
-            echo "Version: 1.0.27"
-            echo "Libs: \${libdir}/libusb-1.0.a -lobjc -Wl,-framework,IOKit -Wl,-framework,CoreFoundation -Wl,-framework,AppKit"
-            echo "Cflags: -I\${includedir}"
-          } | sudo tee /usr/local/lib/pkgconfig/libusb-1.0.pc > /dev/null
- 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          aqtversion: '==3.1.*'
-          version: '6.7.3'
-          host: 'mac'
-          target: 'desktop'
-          arch: 'clang_64'  # Qt 6.2+ macOS: clang_64 universal binary (arm64+x86_64) içerir
-          modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
- 
-      - name: Configure and Build (Universal Binary)
-        run: |
-          # CMakeLists.txt zaten CMAKE_OSX_ARCHITECTURES="arm64;x86_64" ve
-          # CMAKE_OSX_DEPLOYMENT_TARGET="11" içeriyor — tekrar geçmiyoruz.
-          # libnghttp2 kaldırıldığı için cmake onu bulamayacak; USE_NGHTTP2 otomatik OFF olur.
-          # Yine de açıkça geçiyoruz, cmake uyarı vermesin diye.
-          mkdir build && cd build
- 
-          cmake ../src \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DUSE_NGHTTP2=OFF
- 
-          make -j$(sysctl -n hw.ncpu)
- 
-          # Doğrulama: "Architectures in the fat file: gem-imager are: x86_64 arm64"
-          lipo -info gem-imager.app/Contents/MacOS/gem-imager
- 
-      - name: Deploy and Package macOS
-        run: |
-          $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg -verbose=1
-          mv build/gem-imager.dmg build/GemImager-macOS-universal.dmg
- 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GemImager-macOS-universal
-          path: build/GemImager-macOS-universal.dmg
+                - name: Checkout
+                  uses: actions/checkout@v4
+
+                - name: Install Dependencies
+                  run: |
+                    brew install libusb pkg-config
+
+                - name: Install Qt
+                  uses: jurplel/install-qt-action@v3
+                  with:
+                    aqtversion: '==3.1.*'
+                    version: '6.7.3'
+                    host: 'mac'
+                    target: 'desktop'
+                    arch: 'clang_64'
+                    modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
+
+                - name: Configure and Build
+                  run: |
+                    LIBUSB_PATH=$(brew --prefix libusb)
+
+                    mkdir build
+                    cd build
+
+                    cmake ../src \
+                      -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
+                      -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
+                      -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include/libusb-1.0" \
+                      -DCMAKE_BUILD_TYPE=Release \
+                      -DCMAKE_OSX_ARCHITECTURES="arm64" \
+                      -DCMAKE_EXE_LINKER_FLAGS="-L$LIBUSB_PATH/lib" \
+                      -DCMAKE_SHARED_LINKER_FLAGS="-L$LIBUSB_PATH/lib"
+
+                    make -j$(sysctl -n hw.ncpu)
+
+                - name: Deploy and Package macOS
+                  run: |
+                    $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
+                    mv build/gem-imager.dmg build/GemImager-macOS.dmg
+
+                - name: Upload Artifact
+                  uses: actions/upload-artifact@v4
+                  with:
+                    name: GemImager-macOS
+                    path: build/GemImager-macOS.dmg
 
  
 
