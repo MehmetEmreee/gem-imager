@@ -160,8 +160,26 @@ jobs:
 
                 - name: Deploy and Package macOS
                   run: |
-                    $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
-                    mv build/gem-imager.dmg build/GemImager-macOS-${{ matrix.name }}.dmg
+                    # 1. Ne olur ne olmaz diye build klasörünün içini listeleyelim (Hata durumunda loglarda dosya adını görebilmek için)
+                    ls -la build/
+                    
+                    # 2. İçinde '.app' geçen uygulamayı otomatik olarak bulup APP_BUNDLE değişkenine atayalım
+                    APP_BUNDLE=$(find build -maxdepth 1 -name "*.app" | head -n 1)
+                    
+                    # Eğer herhangi bir .app bulunamazsa işlemi anlaşılır bir hatayla durduralım
+                    if [ -z "$APP_BUNDLE" ]; then
+                      echo "Hata: .app dosyasi bulunamadi!"
+                      exit 1
+                    fi
+                    
+                    echo "Bulunan uygulama: $APP_BUNDLE"
+                    
+                    # 3. macdeployqt aracını sabit bir isimle değil, dinamik olarak bulduğumuz bu dosya üzerinde çalıştıralım
+                    $Qt6_DIR/bin/macdeployqt "$APP_BUNDLE" -dmg
+                    
+                    # 4. macdeployqt'nin oluşturduğu DMG dosyasının adını dinamik olarak hesaplayıp hedef isme (Matrix'e göre) yeniden adlandıralım
+                    DMG_FILE="${APP_BUNDLE%.app}.dmg"
+                    mv "$DMG_FILE" "build/GemImager-macOS-${{ matrix.name }}.dmg"
 
                 - name: Upload Artifact
                   uses: actions/upload-artifact@v4
