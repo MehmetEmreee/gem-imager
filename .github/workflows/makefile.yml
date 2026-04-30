@@ -112,8 +112,17 @@ jobs:
           name: GemImager Windows ${{ steps.getversion.outputs.gemImagerVersion }}
           path: ${{ github.workspace }}\build\GemImager-${{ steps.getversion.outputs.gemImagerVersion }}.exe
   macos:
-    runs-on: macos-latest
-    steps:
+                strategy:
+                  matrix:
+                    include:
+                      - os: macos-13      # Intel (x86_64) tabanlı sunucu
+                        arch: x86_64
+                        name: Intel
+                      - os: macos-14      # Apple Silicon (arm64) tabanlı sunucu
+                        arch: arm64
+                        name: AppleSilicon
+                runs-on: ${{ matrix.os }}
+                steps:
                 - name: Checkout
                   uses: actions/checkout@v4
 
@@ -143,7 +152,7 @@ jobs:
                       -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
                       -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include/libusb-1.0" \
                       -DCMAKE_BUILD_TYPE=Release \
-                      -DCMAKE_OSX_ARCHITECTURES="arm64" \
+                      -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
                       -DCMAKE_EXE_LINKER_FLAGS="-L$LIBUSB_PATH/lib" \
                       -DCMAKE_SHARED_LINKER_FLAGS="-L$LIBUSB_PATH/lib"
 
@@ -152,14 +161,13 @@ jobs:
                 - name: Deploy and Package macOS
                   run: |
                     $Qt6_DIR/bin/macdeployqt build/gem-imager.app -dmg
-                    mv build/gem-imager.dmg build/GemImager-macOS.dmg
+                    mv build/gem-imager.dmg build/GemImager-macOS-${{ matrix.name }}.dmg
 
                 - name: Upload Artifact
                   uses: actions/upload-artifact@v4
                   with:
-                    name: GemImager-macOS
-                    path: build/GemImager-macOS.dmg
-
+                    name: GemImager-macOS-${{ matrix.name }}
+                    path: build/GemImager-macOS-${{ matrix.name }}.dmg
  
 
 
