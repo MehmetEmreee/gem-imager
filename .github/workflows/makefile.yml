@@ -120,11 +120,11 @@ jobs:
       # ---------------------------------------------------------------------------
       # SORUN: macos-latest = arm64 runner. Homebrew arm64-only kütüphane kurar.
       # cmake hem pkg-config hem de kendi find_library() mekanizmasıyla
-      # /opt/homebrew'e bakar — PKG_CONFIG_PATH override'ı bu ikincisini engellemez.
+      # /opt/homebrew'e bakar — bu referanslar artık kaldırıldı.
       #
       # ÇÖZÜM:
       #   1) Homebrew'ün arm64-only libusb ve libnghttp2'sini tamamen kaldır.
-      #   2) Universal static libusb'i derle, /opt/homebrew'e kur (cmake doğal bulur).
+      #   2) Universal static libusb'i derle, /usr/local'e kur (cmake doğal bulur).
       #   3) libnghttp2 bulunamayacağı için -DUSE_NGHTTP2=OFF otomatik devreye girer.
       #      (OS imager için HTTP/2 kritik değil; HTTPS SecureTransport ile çalışır.)
       # ---------------------------------------------------------------------------
@@ -161,13 +161,15 @@ jobs:
           # Doğrulama: "Architectures in the fat file: ... are: x86_64 arm64"
           lipo -info /tmp/libusb-universal.a
  
-          # Homebrew prefix'ine kur — cmake ve pkg-config buraya bakar
-          sudo cp /tmp/libusb-universal.a /opt/homebrew/lib/libusb-1.0.a
-          sudo cp -r /tmp/libusb-arm64/include/libusb-1.0 /opt/homebrew/include/
+          # /usr/local/lib'e kur — macOS varsayılan linker arama yolunda.
+          # pkg_check_modules'dan gelen -lusb-1.0 için ayrıca -L flag'i gerekmez.
+          sudo mkdir -p /usr/local/lib/pkgconfig /usr/local/include
+          sudo cp /tmp/libusb-universal.a /usr/local/lib/libusb-1.0.a
+          sudo cp -r /tmp/libusb-arm64/include/libusb-1.0 /usr/local/include/
  
           # pkg-config dosyası: macOS framework'leri statik link için gerekli
           {
-            echo "prefix=/opt/homebrew"
+            echo "prefix=/usr/local"
             echo "libdir=\${prefix}/lib"
             echo "includedir=\${prefix}/include/libusb-1.0"
             echo ""
@@ -176,7 +178,7 @@ jobs:
             echo "Version: 1.0.27"
             echo "Libs: \${libdir}/libusb-1.0.a -lobjc -Wl,-framework,IOKit -Wl,-framework,CoreFoundation -Wl,-framework,AppKit"
             echo "Cflags: -I\${includedir}"
-          } | sudo tee /opt/homebrew/lib/pkgconfig/libusb-1.0.pc > /dev/null
+          } | sudo tee /usr/local/lib/pkgconfig/libusb-1.0.pc > /dev/null
  
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -216,6 +218,7 @@ jobs:
         with:
           name: GemImager-macOS-universal
           path: build/GemImager-macOS-universal.dmg
+
  
 
 
