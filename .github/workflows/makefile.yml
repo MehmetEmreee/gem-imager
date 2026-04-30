@@ -1,5 +1,7 @@
 name: Build
+
 on: workflow_dispatch
+
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
   QT_FORCE_STDERR_LOGGING: 1
@@ -46,6 +48,47 @@ jobs:
           name: GemImager Linux ${{ steps.build.outputs.gemImagerVersion }}
           path: GemImager-${{ steps.build.outputs.gemImagerVersion }}.AppImage
 
+  linux-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Upgrade OS
+        run: |
+          sudo apt-mark hold firefox
+          sudo apt update && sudo apt upgrade
+      - name: Install dependencies
+        run: |
+          sudo apt install --no-install-recommends build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config
+          sudo wget -O ${{ runner.temp }}/appimagecraft.AppImage https://github.com/TheAssassin/appimagecraft/releases/download/continuous/appimagecraft-aarch64.AppImage
+          sudo chmod +x ${{ runner.temp }}/appimagecraft.AppImage
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          aqtversion: '==3.1.*'
+          version: '6.7.3'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_arm64'
+          modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build
+        id: build
+        run: |
+            export Qt6_ROOT="$Qt6_DIR"
+            export QMAKE="$Qt6_DIR/bin/qmake"
+            export LD_LIBRARY_PATH="$Qt6_DIR/lib"
+            sed -i "s@Qt6_ROOT=.*@Qt6_ROOT=\"$Qt6_ROOT\"@" appimagecraft.yml
+            sed -i "s@QMAKE: .*@QMAKE: \"$QMAKE\"@" appimagecraft.yml
+            ${{ runner.temp }}/appimagecraft.AppImage
+            imager_version=$(grep '  version:' appimagecraft.yml | cut -d ':' -f 2 | tr -d ' ')
+            tee -a "${GITHUB_OUTPUT}" <<< gemImagerVersion="$imager_version"
+            mv Gemstone_Imager-${imager_version}-aarch64.AppImage GemImager-${imager_version}-ARM.AppImage
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: GemImager Linux ARM ${{ steps.build.outputs.gemImagerVersion }}
+          path: GemImager-${{ steps.build.outputs.gemImagerVersion }}-ARM.AppImage
+
   windows:
     runs-on: windows-2022
     defaults: { run: { shell: cmd } }
@@ -78,7 +121,6 @@ jobs:
       - name: Patch for Windows (stpncpy fix)
         shell: bash
         run: |
-          # stpncpy fonksiyonu MinGW'de yok, bu yüzden onu manuel tanımlayan bir başlık ekliyoruz
           for file in src/dependencies/crypt/sha256crypt.c src/dependencies/crypt/sha512crypt.c; do
             sed -i '1i #ifdef _WIN32\n#include <string.h>\nstatic char *stpncpy(char *dst, const char *src, size_t n) {\n  size_t len = strnlen(src, n);\n  return strncpy(dst, src, n) + len;\n}\n#endif' $file
           done    
@@ -111,88 +153,66 @@ jobs:
         with:
           name: GemImager Windows ${{ steps.getversion.outputs.gemImagerVersion }}
           path: ${{ github.workspace }}\build\GemImager-${{ steps.getversion.outputs.gemImagerVersion }}.exe
+
   macos:
-                strategy:
-                  matrix:
-                    include:
-                      - os: macos-13      # Intel (x86_64) tabanlı sunucu
-                        arch: x86_64
-                        name: Intel
-                      - os: macos-14      # Apple Silicon (arm64) tabanlı sunucu
-                        arch: arm64
-                        name: AppleSilicon
-                runs-on: ${{ matrix.os }}
-                steps:
-                - name: Checkout
-                  uses: actions/checkout@v4
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-                - name: Install Dependencies
-                  run: |
-                    brew install libusb pkg-config
+      - name: Install Dependencies
+        run: |
+          brew install libusb pkg-config
 
-                - name: Install Qt
-                  uses: jurplel/install-qt-action@v3
-                  with:
-                    aqtversion: '==3.1.*'
-                    version: '6.7.3'
-                    host: 'mac'
-                    target: 'desktop'
-                    arch: 'clang_64'
-                    modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          aqtversion: '==3.1.*'
+          version: '6.7.3'
+          host: 'mac'
+          target: 'desktop'
+          arch: 'clang_64'
+          modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
 
-                - name: Configure and Build
-                  run: |
-                    LIBUSB_PATH=$(brew --prefix libusb)
+      - name: Configure and Build
+        run: |
+          LIBUSB_PATH=$(brew --prefix libusb)
 
-                    mkdir build
-                    cd build
+          mkdir build
+          cd build
 
-                    cmake ../src \
-                      -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
-                      -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
-                      -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include/libusb-1.0" \
-                      -DCMAKE_BUILD_TYPE=Release \
-                      -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
-                      -DCMAKE_EXE_LINKER_FLAGS="-L$LIBUSB_PATH/lib" \
-                      -DCMAKE_SHARED_LINKER_FLAGS="-L$LIBUSB_PATH/lib"
+          cmake ../src \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR;$LIBUSB_PATH" \
+            -DCMAKE_LIBRARY_PATH="$LIBUSB_PATH/lib" \
+            -DCMAKE_INCLUDE_PATH="$LIBUSB_PATH/include/libusb-1.0" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$LIBUSB_PATH/lib" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-L$LIBUSB_PATH/lib"
 
-                    make -j$(sysctl -n hw.ncpu)
+          make -j$(sysctl -n hw.ncpu)
 
-                - name: Deploy and Package macOS
-                  run: |
-                    # Build klasörünü listele
-                    ls -la build/
-                    
-                    # Uygulama bundle'ını bul
-                    APP_BUNDLE=$(find build -maxdepth 1 -name "*.app" | head -n 1)
-                    
-                    if [ -z "$APP_BUNDLE" ]; then
-                      echo "Hata: .app dosyasi bulunamadi!"
-                      exit 1
-                    fi
-                    
-                    echo "Bulunan uygulama: $APP_BUNDLE"
-                    
-                    # Kütüphaneleri bundle'ın içine kopyala
-                    $Qt6_DIR/bin/macdeployqt "$APP_BUNDLE"
-                    
-                    # ARM64 (Apple Silicon) ve x86_64 için yerel (ad-hoc) kod imzası at. 
-                    # Bu adım, M serisi işlemcilerde "Code Signature Invalid" hatasını önler.
-                    codesign --force --deep --sign - "$APP_BUNDLE"
-                    
-                    # DMG'yi macdeployqt ile oluştur
-                    $Qt6_DIR/bin/macdeployqt "$APP_BUNDLE" -dmg
-                    
-                    # DMG dosyasını Matrix ismine göre yeniden adlandır
-                    DMG_FILE="${APP_BUNDLE%.app}.dmg"
-                    mv "$DMG_FILE" "build/GemImager-macOS-${{ matrix.name }}.dmg"
+      - name: Deploy and Package macOS
+        run: |
+          ls -la build/
+          APP_BUNDLE=$(find build -maxdepth 1 -name "*.app" | head -n 1)
+          
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "Hata: .app dosyasi bulunamadi!"
+            exit 1
+          fi
+          
+          echo "Bulunan uygulama: $APP_BUNDLE"
+          
+          $Qt6_DIR/bin/macdeployqt "$APP_BUNDLE"
+          codesign --force --deep --sign - "$APP_BUNDLE"
+          $Qt6_DIR/bin/macdeployqt "$APP_BUNDLE" -dmg
+          
+          DMG_FILE="${APP_BUNDLE%.app}.dmg"
+          mv "$DMG_FILE" "build/GemImager-macOS-AppleSilicon.dmg"
 
-                - name: Upload Artifact
-                  uses: actions/upload-artifact@v4
-                  with:
-                    name: GemImager-macOS-${{ matrix.name }}
-                    path: build/GemImager-macOS-${{ matrix.name }}.dmg
- 
-
-
-
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GemImager-macOS-AppleSilicon
+          path: build/GemImager-macOS-AppleSilicon.dmg
