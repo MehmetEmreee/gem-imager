@@ -51,57 +51,63 @@ jobs:
   linux-arm:
     runs-on: ubuntu-24.04-arm
     steps:
-      - name: Upgrade OS
-        run: |
-          sudo apt-mark hold firefox
-          sudo apt update && sudo apt upgrade
-          
-      - name: Install system dependencies
-        run: |
-          sudo apt install --no-install-recommends -y build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config python3-pip python3-venv
-          
-      - name: Install AppImageCraft
-        run: |
-          sudo wget -O ${{ runner.temp }}/appimagecraft.AppImage https://github.com/TheAssassin/appimagecraft/releases/download/continuous/appimagecraft-aarch64.AppImage
-          sudo chmod +x ${{ runner.temp }}/appimagecraft.AppImage
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install Qt 6.7.3 using aqtinstall
-        run: |
-          # Python sanal ortamı (venv) oluşturup aqtinstall'u kuruyoruz
-          python3 -m venv aqt_venv
-          source aqt_venv/bin/activate
-          pip install aqtinstall
-          
-          # Linux ARM64 (aarch64) için Qt 6.7.3'ü indiriyoruz
-          # Burada host olarak linux_arm64, arch olarak gcc_arm64 kullanıyoruz.
-          aqt install-qt linux desktop 6.7.3 gcc_arm64 -m qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d --outputdir ${{ github.workspace }}/Qt
-          
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Upgrade OS
+      run: |
+        sudo apt-mark hold firefox
+        sudo apt update && sudo apt upgrade -y
 
-      - name: Build
-        id: build
-        run: |
-            # aqtinstall'un kurduğu Qt yolunu kullanıyoruz
-            export Qt6_DIR="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/lib/cmake/Qt6"
-            export Qt6_ROOT="${{ github.workspace }}/Qt/6.7.3/gcc_arm64"
-            export QMAKE="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/bin/qmake"
-            export LD_LIBRARY_PATH="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/lib"
-            
-            sed -i "s@Qt6_ROOT=.*@Qt6_ROOT=\"$Qt6_ROOT\"@" appimagecraft.yml
-            sed -i "s@QMAKE: .*@QMAKE: \"$QMAKE\"@" appimagecraft.yml
-            
-            ${{ runner.temp }}/appimagecraft.AppImage
-            
-            imager_version=$(grep '  version:' appimagecraft.yml | cut -d ':' -f 2 | tr -d ' ')
-            tee -a "${GITHUB_OUTPUT}" <<< gemImagerVersion="$imager_version"
-            mv Gemstone_Imager-${imager_version}-aarch64.AppImage GemImager-${imager_version}-ARM.AppImage
-            
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: GemImager Linux ARM ${{ steps.build.outputs.gemImagerVersion }}
-          path: GemImager-${{ steps.build.outputs.gemImagerVersion }}-ARM.AppImage
+    - name: Install Qt and dependencies via APT
+      run: |
+        sudo apt install --no-install-recommends -y \
+          build-essential cmake git ninja-build pkg-config \
+          libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev \
+          qt6-base-dev qt6-base-dev-tools \
+          qt6-tools-dev qt6-tools-dev-tools \
+          qt6-declarative-dev \
+          libqt6svg6-dev \
+          libqt6serialport6-dev \
+          libqt6imageformats6 \
+          qt6-quick3d-dev \
+          qt6-virtualkeyboard-dev \
+          libqt6pdf6-dev \
+          qml6-module-qtquick
+
+    - name: Patch CMake minimum Qt version
+      run: |
+        # Ubuntu 24.04 Qt 6.4 sunar, minimum gereksinimi geçici düşür
+        find src -name "CMakeLists.txt" -exec \
+          sed -i 's/find_package(Qt6 [0-9.]*/find_package(Qt6 6.4/g' {} \;
+        # Veya proje genelinde:
+        sed -i 's/cmake_minimum_required(VERSION 6\.[0-9]/cmake_minimum_required(VERSION 6.4/g' \
+          src/CMakeLists.txt || true
+
+    - name: Set Qt paths
+      run: |
+        echo "Qt6_DIR=/usr/lib/aarch64-linux-gnu/cmake/Qt6" >> $GITHUB_ENV
+        echo "QMAKE=/usr/bin/qmake6" >> $GITHUB_ENV
+
+    - name: Build
+      id: build
+      run: |
+        mkdir build
+        cmake src/ -B build \
+          -DCMAKE_PREFIX_PATH=/usr/lib/aarch64-linux-gnu/cmake/Qt6 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -G Ninja
+        cmake --build build --parallel
+        
+        # Versiyon çek ve çıktıyı düzenle
+        version=$(grep IMAGER_VERSION_STR build/CMakeCache.txt | cut -d '=' -f 2)
+        echo "gemImagerVersion=$version" >> $GITHUB_OUTPUT
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GemImager Linux ARM ${{ steps.build.outputs.gemImagerVersion }}
+        path: build/GemImager-${{ steps.build.outputs.gemImagerVersion }}-ARM
   windows:
     runs-on: windows-2022
     defaults: { run: { shell: cmd } }
