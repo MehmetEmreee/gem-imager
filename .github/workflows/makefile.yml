@@ -61,7 +61,8 @@ jobs:
           sudo apt install --no-install-recommends -y build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config
           
           # 2. Linux ARM64 için resmi FOSS Qt binary'leri olmadığı için Ubuntu'nun kendi depolarındaki Qt 6 paketlerini kuruyoruz
-          sudo apt install --no-install-recommends -y qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-l10n-tools libqt6serialport6-dev qtvirtualkeyboard-qt6-dev libqt6quick3d6-dev qt6-image-formats-plugins qt6-webengine-dev
+          # Paket adları Ubuntu 24.04 depolarına göre düzeltildi
+          sudo apt install --no-install-recommends -y qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-l10n-tools libqt6serialport6-dev qt6-virtualkeyboard-dev qt6-quick3d-dev qt6-image-formats-plugins qt6-webengine-dev
           
           # 3. AppImageCraft kurulumu
           sudo wget -O ${{ runner.temp }}/appimagecraft.AppImage https://github.com/TheAssassin/appimagecraft/releases/download/continuous/appimagecraft-aarch64.AppImage
