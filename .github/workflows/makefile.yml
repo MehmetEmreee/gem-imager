@@ -59,48 +59,65 @@ jobs:
         sudo apt-mark hold firefox
         sudo apt update && sudo apt upgrade -y
 
-    - name: Install Qt and dependencies via APT
+    - name: Install build dependencies
       run: |
         sudo apt install --no-install-recommends -y \
-          build-essential cmake git ninja-build pkg-config \
+          build-essential cmake ninja-build git perl python3 pkg-config \
           libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev \
-          qt6-base-dev qt6-base-dev-tools \
-          qt6-tools-dev qt6-tools-dev-tools \
-          qt6-declarative-dev \
-          libqt6svg6-dev \
-          libqt6serialport6-dev \
-          libqt6imageformats6 \
-          qt6-quick3d-dev \
-          qt6-virtualkeyboard-dev \
-          libqt6pdf6-dev \
-          qml6-module-qtquick
+          libfontconfig1-dev libfreetype6-dev libx11-dev libxext-dev \
+          libxfixes-dev libxi-dev libxrender-dev libxcb1-dev \
+          libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev \
+          libxcb-shm0-dev libxcb-icccm4-dev libxcb-sync-dev \
+          libxcb-xfixes0-dev libxcb-shape0-dev libxcb-randr0-dev \
+          libxcb-render-util0-dev libxkbcommon-dev libxkbcommon-x11-dev \
+          libssl-dev libdbus-1-dev libgl1-mesa-dev libgles2-mesa-dev
 
-    - name: Patch CMake minimum Qt version
+    - name: Cache Qt 6.7.3
+      id: cache-qt
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/Qt6
+        key: qt-6.7.3-linux-arm64-v1
+
+    - name: Build Qt 6.7.3 from source
+      if: steps.cache-qt.outputs.cache-hit != 'true'
       run: |
-        # Ubuntu 24.04 Qt 6.4 sunar, minimum gereksinimi geçici düşür
-        find src -name "CMakeLists.txt" -exec \
-          sed -i 's/find_package(Qt6 [0-9.]*/find_package(Qt6 6.4/g' {} \;
-        # Veya proje genelinde:
-        sed -i 's/cmake_minimum_required(VERSION 6\.[0-9]/cmake_minimum_required(VERSION 6.4/g' \
-          src/CMakeLists.txt || true
+        wget -q https://download.qt.io/official_releases/qt/6.7/6.7.3/single/qt-everywhere-src-6.7.3.tar.xz
+        tar xf qt-everywhere-src-6.7.3.tar.xz
+        mkdir qt-build && cd qt-build
+        ../qt-everywhere-src-6.7.3/configure \
+          -prefix ${{ github.workspace }}/Qt6 \
+          -release \
+          -opensource \
+          -confirm-license \
+          -nomake examples \
+          -nomake tests \
+          -skip qtwebengine \
+          -skip qtlocation \
+          -skip qtspeech \
+          -skip qtmultimedia \
+          -skip qtgraphs \
+          -submodules qtbase,qtimageformats,qtpdf,qtserialport,qtvirtualkeyboard,qtquick3d,qtdeclarative,qttools,qtsvg
+        cmake --build . --parallel $(nproc)
+        cmake --install .
 
-    - name: Set Qt paths
-      run: |
-        echo "Qt6_DIR=/usr/lib/aarch64-linux-gnu/cmake/Qt6" >> $GITHUB_ENV
-        echo "QMAKE=/usr/bin/qmake6" >> $GITHUB_ENV
-
-    - name: Build
+    - name: Build GemImager
       id: build
       run: |
+        export Qt6_ROOT="${{ github.workspace }}/Qt6"
+        export Qt6_DIR="${{ github.workspace }}/Qt6/lib/cmake/Qt6"
+        export PATH="${{ github.workspace }}/Qt6/bin:$PATH"
+        export LD_LIBRARY_PATH="${{ github.workspace }}/Qt6/lib"
+
         mkdir build
         cmake src/ -B build \
-          -DCMAKE_PREFIX_PATH=/usr/lib/aarch64-linux-gnu/cmake/Qt6 \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/Qt6" \
           -DCMAKE_BUILD_TYPE=Release \
           -G Ninja
         cmake --build build --parallel
-        
-        # Versiyon çek ve çıktıyı düzenle
+
         version=$(grep IMAGER_VERSION_STR build/CMakeCache.txt | cut -d '=' -f 2)
+        mv build/GemImager build/GemImager-${version}-ARM || true
         echo "gemImagerVersion=$version" >> $GITHUB_OUTPUT
 
     - name: Upload artifact
