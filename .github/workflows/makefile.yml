@@ -55,31 +55,33 @@ jobs:
         run: |
           sudo apt-mark hold firefox
           sudo apt update && sudo apt upgrade
-      - name: Install dependencies
+      - name: Install dependencies and System Qt6
         run: |
-          sudo apt install --no-install-recommends build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config
+          # 1. Temel bağımlılıklar
+          sudo apt install --no-install-recommends -y build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config
+          
+          # 2. Linux ARM64 için resmi FOSS Qt binary'leri olmadığı için Ubuntu'nun kendi depolarındaki Qt 6 paketlerini kuruyoruz
+          sudo apt install --no-install-recommends -y qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-l10n-tools libqt6serialport6-dev qtvirtualkeyboard-qt6-dev libqt6quick3d6-dev qt6-image-formats-plugins qt6-webengine-dev
+          
+          # 3. AppImageCraft kurulumu
           sudo wget -O ${{ runner.temp }}/appimagecraft.AppImage https://github.com/TheAssassin/appimagecraft/releases/download/continuous/appimagecraft-aarch64.AppImage
           sudo chmod +x ${{ runner.temp }}/appimagecraft.AppImage
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          aqtversion: '==3.1.*'
-          version: '6.7.3'
-          host: 'linux'
-          target: 'desktop'
-          arch: 'linux_arm64'
-          modules: 'qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d'
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build
         id: build
         run: |
-            export Qt6_ROOT="$Qt6_DIR"
-            export QMAKE="$Qt6_DIR/bin/qmake"
-            export LD_LIBRARY_PATH="$Qt6_DIR/lib"
+            # Sistem Qt6'sını kullandığımız için ortam değişkenlerini Ubuntu yapısına göre güncelliyoruz
+            export Qt6_DIR="/usr/lib/aarch64-linux-gnu/cmake/Qt6"
+            export Qt6_ROOT="/usr"
+            export QMAKE="/usr/lib/qt6/bin/qmake"
+            export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu"
+            
             sed -i "s@Qt6_ROOT=.*@Qt6_ROOT=\"$Qt6_ROOT\"@" appimagecraft.yml
             sed -i "s@QMAKE: .*@QMAKE: \"$QMAKE\"@" appimagecraft.yml
+            
             ${{ runner.temp }}/appimagecraft.AppImage
+            
             imager_version=$(grep '  version:' appimagecraft.yml | cut -d ':' -f 2 | tr -d ' ')
             tee -a "${GITHUB_OUTPUT}" <<< gemImagerVersion="$imager_version"
             mv Gemstone_Imager-${imager_version}-aarch64.AppImage GemImager-${imager_version}-ARM.AppImage
