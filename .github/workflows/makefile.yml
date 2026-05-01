@@ -56,35 +56,37 @@ jobs:
           sudo apt-mark hold firefox
           sudo apt update && sudo apt upgrade
           
-      - name: Install dependencies and System Qt6
+      - name: Install system dependencies
         run: |
-          # 1. Temel bağımlılıklar
-          sudo apt install --no-install-recommends -y build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config
+          sudo apt install --no-install-recommends -y build-essential cmake git libgnutls28-dev libxcb-cursor-dev libusb-1.0-0-dev pkg-config python3-pip python3-venv
           
-          # 2. Ubuntu 24.04 depolarından Qt6 kütüphanelerini kuruyoruz
-          sudo apt install --no-install-recommends -y qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-l10n-tools libqt6serialport6-dev qt6-virtualkeyboard-dev qt6-quick3d-dev qt6-image-formats-plugins qt6-webengine-dev
-          
-          # 3. AppImageCraft kurulumu
+      - name: Install AppImageCraft
+        run: |
           sudo wget -O ${{ runner.temp }}/appimagecraft.AppImage https://github.com/TheAssassin/appimagecraft/releases/download/continuous/appimagecraft-aarch64.AppImage
           sudo chmod +x ${{ runner.temp }}/appimagecraft.AppImage
+
+      - name: Install Qt 6.7.3 using aqtinstall
+        run: |
+          # Python sanal ortamı (venv) oluşturup aqtinstall'u kuruyoruz
+          python3 -m venv aqt_venv
+          source aqt_venv/bin/activate
+          pip install aqtinstall
+          
+          # Linux ARM64 (aarch64) için Qt 6.7.3'ü indiriyoruz
+          # Burada host olarak linux_arm64, arch olarak gcc_arm64 kullanıyoruz.
+          aqt install-qt linux desktop 6.7.3 gcc_arm64 -m qtimageformats qtpdf qtserialport qtvirtualkeyboard qtquick3d --outputdir ${{ github.workspace }}/Qt
           
       - name: Checkout
         uses: actions/checkout@v4
-        
-      - name: Patch CMake Qt Version Requirement
-        run: |
-          # CMakeLists.txt içindeki "6.7" sürüm zorunluluğunu Ubuntu'daki "6.4" ile değiştiriyoruz.
-          # Bu sayede CMake sürüm uyuşmazlığı hatası vermeden sistemdeki Qt'yi kabul edecek.
-          sed -i 's/6.7/6.4/g' src/CMakeLists.txt
-          
+
       - name: Build
         id: build
         run: |
-            # Sistem Qt6'sını kullandığımız için ortam değişkenleri Ubuntu'ya uygun şekilde ayarlandı
-            export Qt6_DIR="/usr/lib/aarch64-linux-gnu/cmake/Qt6"
-            export Qt6_ROOT="/usr"
-            export QMAKE="/usr/lib/qt6/bin/qmake"
-            export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu"
+            # aqtinstall'un kurduğu Qt yolunu kullanıyoruz
+            export Qt6_DIR="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/lib/cmake/Qt6"
+            export Qt6_ROOT="${{ github.workspace }}/Qt/6.7.3/gcc_arm64"
+            export QMAKE="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/bin/qmake"
+            export LD_LIBRARY_PATH="${{ github.workspace }}/Qt/6.7.3/gcc_arm64/lib"
             
             sed -i "s@Qt6_ROOT=.*@Qt6_ROOT=\"$Qt6_ROOT\"@" appimagecraft.yml
             sed -i "s@QMAKE: .*@QMAKE: \"$QMAKE\"@" appimagecraft.yml
@@ -100,7 +102,6 @@ jobs:
         with:
           name: GemImager Linux ARM ${{ steps.build.outputs.gemImagerVersion }}
           path: GemImager-${{ steps.build.outputs.gemImagerVersion }}-ARM.AppImage
-
   windows:
     runs-on: windows-2022
     defaults: { run: { shell: cmd } }
